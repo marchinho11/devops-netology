@@ -2,35 +2,70 @@
 
 import os
 import sys
-from requests import post
+import socket
+import pickle
+import threading
 
-# Проверка на наличие GITHUB_TOKEN в env-переменных
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-if not GITHUB_TOKEN:
-    raise RuntimeError("Please specify `GITHUB_TOKEN` in env")
 
-# Переключение ветки и коммит всех изменений
-NEW_BRANCH_NAME = sys.argv[1]
-COMMIT_MESSAGE = sys.argv[2]
-print(f"New branch name: {NEW_BRANCH_NAME}. Commit message: {COMMIT_MESSAGE}")
-bash_command = (
-    f"git checkout -b {NEW_BRANCH_NAME} && "
-    "git add . && "
-    f'git commit -m "{COMMIT_MESSAGE}" && '
-    f"git push --set-upstream origin {NEW_BRANCH_NAME}"
-)
-result_os = os.popen(bash_command).read()
+# Локальный "сторадж" для персистентности
+class JsonYamlIpStorage:
+    STORAGE_NAME = "ip_storage.pickle"
+    STORAGE_PATTERN_JSON = "{service_name}.json"
+    STORAGE_PATTERN_YAML = "{service_name}.yaml"
 
-# Создание PR
-headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-params = {"head": NEW_BRANCH_NAME, "base": "master", "title": COMMIT_MESSAGE}
-resp = post(
-    "https://api.github.com/repos/marchinho11/devops-netology/pulls",
-    headers=headers,
-    json=params,
-).json()
-if resp.get("state") == "open":
-    print(
-        "PR created successfully!\n"
-        f"Url: {resp['html_url']}"
-    )
+    def __init__(self):
+        self._storage = dict()
+        self._lock = threading.Lock()
+        self._load_file_storage()
+
+    def update_service_ip(self, host, ip, check_mismatch=True):
+        # Проверка на несовпадение ip сервиса
+        if check_mismatch:
+            current_ip = self._storage.get(host)
+            if current_ip and current_ip != ip:
+                print(f"[ERROR] {host} IP mismatch: {current_ip} {ip}")
+
+        self._storage[host] = ip
+        self._persist_file_storage()
+        self.__persist_service_json_yaml(service=service, ip=ip)
+
+    def get_service_ip(self, host):
+        return self._storage.get(host)
+
+    def _load_file_storage(self):
+        """Проверить, есть ли файл с ip-ами на диске и по-возможности загрузить."""
+        files_ = os.listdir(".")
+        if self.STORAGE_NAME in files_:
+            with self._lock:
+                with open(self.STORAGE_NAME, "rb") as f_in:
+                    self._storage = pickle.load(f_in)
+
+    def _persist_file_storage(self):
+        """Записать на диск сторадж."""
+        with self._lock:
+            with open(self.STORAGE_NAME, "wb") as f_in:
+                pickle.dump(self._storage, f_in)
+
+    def __persist_service_json_yaml(self, service, ip):
+        import json
+        with self._lock:
+            with open(self.STORAGE_PATTERN_JSON.format(service_name=service), "w") as f_out:
+                json.dump({service: ip}, f_out)
+
+        import yaml
+        with self._lock:
+            with open(self.STORAGE_PATTERN_YAML.format(service_name=service), "w") as f_out:
+                yaml.dump([{service: ip}], f_out)
+
+
+# Получить сервисы для проверки
+services = sys.argv[1:]
+
+# Создадим сторадж для персистентности
+ip_storage = JsonYamlIpStorage()
+
+for service in services:
+    ip_ = socket.gethostbyname(service)
+    ip_storage.update_service_ip(service, ip_)
+    ip = ip_storage.get_service_ip(service)
+    print(f"{service} - {ip}")
