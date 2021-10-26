@@ -65,6 +65,7 @@ locals {
   }
 }
 
+# TODO: subnets problem?
 resource "aws_instance" "web" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = local.web_instance_type_map[terraform.workspace]
@@ -80,6 +81,7 @@ resource "aws_instance" "web" {
   }
 }
 
+# TODO: subnets problem?
 resource "aws_instance" "backend" {
   for_each = local.backend_instances
 
