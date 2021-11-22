@@ -2,3 +2,4 @@
 docker/mysql/data
 docker/postgres/data
 .env
+venv
