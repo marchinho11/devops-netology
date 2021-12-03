@@ -1,0 +1,5 @@
+---
+elk_stack_version: "7.14.0"
+
+elastic_address: "{{ hostvars['el-instance']['ansible_facts']['default_ipv4']['address'] }}:9200"
+kibana_address: "{{ hostvars['kibana-instance']['ansible_facts']['default_ipv4']['address'] }}:5601"
